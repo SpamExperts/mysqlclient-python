@@ -6,6 +6,7 @@ override Connection.default_cursor with a non-standard Cursor class.
 """
 import re
 import sys
+import os
 
 from MySQLdb import cursors, _mysql
 from MySQLdb.compat import unicode, PY2
@@ -117,7 +118,12 @@ class Connection(_mysql.connection):
         from MySQLdb.converters import conversions, _bytes_or_str
         from weakref import proxy
 
-        kwargs2 = kwargs.copy()
+        # Load values from the environment if provided.
+        # Anything passed locally overrides the environment.
+        kwargs2 = {key.split("PY_MYSQL_CONNECT_", 1)[1].lower(): value
+                   for key, value in os.environ.items
+                   if key.startswith("PY_MYSQL_CONNECT_")}
+        kwargs2.update(kwargs)
 
         if 'database' in kwargs2:
             kwargs2['db'] = kwargs2.pop('database')
