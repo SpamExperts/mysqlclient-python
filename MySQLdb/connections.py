@@ -202,7 +202,7 @@ class Connection(_mysql.connection):
             return db.string_literal(u.encode(db.encoding))
 
         if not charset:
-            charset = "latin1"
+            charset = "utf8"
         self.set_character_set(charset)
 
         if sql_mode:
