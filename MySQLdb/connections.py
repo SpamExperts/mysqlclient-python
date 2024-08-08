@@ -6,6 +6,7 @@ override Connection.default_cursor with a non-standard Cursor class.
 """
 import re
 import sys
+import os
 
 from MySQLdb import cursors, _mysql
 from MySQLdb.compat import unicode, PY2
@@ -134,6 +135,32 @@ class Connection(_mysql.connection):
 
         kwargs2 = kwargs.copy()
 
+        # Load SSL arguments from the environment if provided.
+        # Anything passed locally overrides the environment.
+        # Skip this if ssl is explicitly passed with a None value.
+        if kwargs2.get("ssl", True) is not None:
+            ssl_arg = {}
+            for conf_name in ("key", "cert", "ca", "capath", "cipher"):
+                try:
+                    value = kwargs2["ssl"][conf_name]
+                except KeyError:
+                    env_key = "PY_MYSQL_SSL_%s" % conf_name.upper()
+                    try:
+                        value = os.environ[env_key]
+                    except KeyError:
+                        value = None
+                if value is not None:
+                    ssl_arg[conf_name] = value
+            if ssl_arg:
+                kwargs2["ssl"] = ssl_arg
+
+        # If the host is "localhost", a TLS connection there does not
+        # make sense, whether it's via a TCP/IP or UNIX socket. Make it
+        # easier for users by removing the SSL argument in that case.
+        if ("ssl" in kwargs2 and
+                kwargs2.get("host", "localhost") == "localhost"):
+            del kwargs2["ssl"]
+
         if 'database' in kwargs2:
             kwargs2['db'] = kwargs2.pop('database')
         if 'password' in kwargs2:
@@ -197,7 +224,7 @@ class Connection(_mysql.connection):
             return db.string_literal(u.encode(db.encoding))
 
         if not charset:
-            charset = self.character_set_name()
+            charset = "latin1"
         self.set_character_set(charset)
 
         if sql_mode:
@@ -237,6 +264,20 @@ class Connection(_mysql.connection):
         if isinstance(query, bytearray):
             query = bytes(query)
         _mysql.connection.query(self, query)
+
+    def __enter__(self):
+        from warnings import warn
+        warn("context interface will be changed.  Use explicit conn.commit() or conn.rollback().",
+             DeprecationWarning, 2)
+        if self.get_autocommit():
+            self.query("BEGIN")
+        return self.cursor()
+
+    def __exit__(self, exc, value, tb):
+        if exc:
+            self.rollback()
+        else:
+            self.commit()
 
     def _bytes_literal(self, bs):
         assert isinstance(bs, (bytes, bytearray))
